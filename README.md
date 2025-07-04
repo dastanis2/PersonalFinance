@@ -1,1 +1,1 @@
-# PersonalFinance
+This project is intended to load data files containing transactions from personal finance institutions into a data warehouse.  This project will also contain PowerBI reports that show trends, milestones, aggregates, etc. that are all sourced from that data warehouse.
