@@ -1,4 +1,41 @@
 #****************************************************************************************
+""""
+DESCRIPTION
+    Load all valid files into the Bronze layer 
+
+STEPS
+	1. Set script-wide calculated variables
+	2. Validate the log file
+	3. Validate root parameters
+	4. For each sub-folder in the Inbound folder
+		4.1. For each file in the current Inbound sub-folder
+			4.1.1. Retrieve file level configuration values for the current file
+			4.1.2. Retrieve column level configuration values for the current file
+			4.1.3. Validate the column header of the current file
+			4.1.4. Copy the current file to the Bronze layer
+			4.1.5. Archive the current file
+	5. Write all steps and errors to the log file
+
+PARAMETERS
+    ColumnConfigurationFilename
+        Datatype: string
+        Expected: the file name of the file containing column level configurations, excluding path (i.e. 'ConfigurationColumn.txt')
+
+    FileConfigurationFilename
+        Datatype: string
+        Expected: the file name of the file containing file level configurations, excluding path (i.e. 'ConfigurationFile.txt')
+
+    FullPath_Root
+        Datatype: string
+        Expected: the full path of the root folder for all files & code (i.e. 'C:\FolderA\FolderB')
+
+    InboundSourceFolder
+        Datatype: string
+        Expected: either empty string, nothing, or a valid folder name in the root bronze folder (i.e. 'BankABC')
+"""
+#****************************************************************************************
+
+#****************************************************************************************
 #REFERENCES
 #****************************************************************************************
 import csv
@@ -12,19 +49,6 @@ from pathlib import Path
 
 #****************************************************************************************
 #PARAMETERS
-"""
-ColumnConfigurationFilename
-    Expected: the file name of the file containing column level configurations, excluding path (i.e. 'ConfigurationColumn.txt')
-
-FileConfigurationFilename
-    Expected: the file name of the file containing file level configurations, excluding path (i.e. 'ConfigurationFile.txt')
-
-FullPath_Root
-    Expected: the full path of the root folder for all files & code (i.e. 'C:\FolderA\FolderB')
-
-InboundSourceFolder
-    Expected: either empty string, nothing, or a valid folder name in the root bronze folder (i.e. 'BankABC')
-"""
 #****************************************************************************************
 ColumnConfigurationFilename = r''
 FileConfigurationFilename = r''
