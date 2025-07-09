@@ -40,7 +40,6 @@ PARAMETERS
 #****************************************************************************************
 import csv
 import inspect
-import logging
 import os
 import pandas as pd
 import uuid
@@ -49,6 +48,7 @@ from pathlib import Path
 
 #****************************************************************************************
 #PARAMETERS
+#   These need to be set by whatever calls this script
 #****************************************************************************************
 ColumnConfigurationFilename = r''
 FileConfigurationFilename = r''
@@ -194,8 +194,6 @@ def Main():
     #Set script-wide scalar variables
     Begin = datetime.now()
     CallStack = r'Main'
-    Continue = True
-    EmptyFolder = ''
     ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
     File = ''
     IsValid_LogFile = False
@@ -219,7 +217,11 @@ def Main():
         if(InboundSourceFolder == ''): AllInboundFolders = True #If no source folder was specified
         elif(FullPath_Root not in InboundSourceFolder): AllInboundFolders = False #If source folder was specified, but not the full path (as expected)
 
-        #Validate the log file first so that all subsequent steps & errors can be properly logged
+        #Validate root level parameters
+        Result = ValidateRootParameters(CallStack, ExecutionGUID)
+        if(Result != Result_Success): raise Exception('Error in ValidateRootParameters') #Log the error and don't continue
+
+        #Validate the log file so that all subsequent steps & errors can be properly logged
         Result = ValidateLogFile(CallStack, ExecutionGUID)
         if(Result != Result_Success): raise Exception('Invalid Log File: ' + FullPath_LogFile + '\n' + Result) #Report the error and don't continue - can't log the error because log file is invalid
 
@@ -234,12 +236,7 @@ def Main():
         print('Error in Main on line', e.__traceback__.tb_lineno, ':', str(e))
 
     try:
-        #Validate root level parameters
-        if(Result == Result_Success): Result = ValidateRootParameters(CallStack, ExecutionGUID)
-        if(Result != Result_Success): raise Exception('Error in ValidateRootParameters') #Log the error and don't continue
-
-        #Once all parameters are valid, process all appropriate inbound files
-        if Continue:
+        if IsValid_LogFile:
             #Loop through the Inbound folder & sub-folder(s) looking for files to ingest
             RootInboundFolder = os.path.join(FullPath_Root, 'Inbound')
             if AllInboundFolders: #Process files in all Inbound sub-folders
