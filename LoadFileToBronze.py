@@ -62,6 +62,7 @@ InboundSourceFolder = r''
 #****************************************************************************************
 AllInboundFolders = True
 Caller = os.path.realpath(__file__)
+ConfigurationFileID = 0
 Configurations_Column_CurrentFile = pd.DataFrame()
 Configurations_File_CurrentFile = pd.DataFrame()
 DelimiterDefault = r'|'
@@ -73,23 +74,8 @@ FullPath_Configurations_Column = ''
 FullPath_Inbound = ''
 FullPath_LogFile = ''
 InboundFileFound = False
+IsValid_LogFile = False
 LogEntries = []
-LogFileDefinition = [
-    'ExecutionGUID'
-    , 'ParentExecutionGUID'
-    , 'Begin'
-    , 'End'
-    , 'Severity'
-    , 'Caller'
-    , 'CallStack'
-    , 'Action'
-    , 'RowCount'
-    , 'Source'
-    , 'Target'
-    , 'Result'
-    , 'File'
-    , 'Parameters'
-]
 Result_Success = r'Success'
 Severity_Error = r'Error'
 Severity_Info = r'Info'
@@ -145,41 +131,17 @@ def CopyToBronze(CallStack, Configurations_Column_CurrentFile, ParentExecutionGU
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in CopyToBronze on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', Caller, '> CopyToBronze on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
         return Result
 
 def LogStep(Begin, CallStack, ExecutionGUID, Parameters, **VariedParameters): #The explicit parameters are required; anything passed into **VariedParameters is optional; different parameters may be passed into **VariedParameters
-    #Don't log this function
-    try:
-        Begin = Begin.strftime('%Y-%m-%d %H:%M:%S.%f') #Format the value as YYYY-MM-DD HH:MM:SS.ms
-        End = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f') #Format the value as YYYY-MM-DD HH:MM:SS.ms
-        if(ExecutionGUID == ''): ExecutionGUID = str(uuid.uuid4()) #If no ExecutionGUID is passed in, generate a new GUID
+    #Variable(s) defined outside of this function, but set within this function
+    global LogEntries
 
-        LogEntry = {
-            'ExecutionGUID': ExecutionGUID
-            , 'ParentExecutionGUID': VariedParameters.get('ParentExecutionGUID')
-            , 'Begin': Begin
-            , 'End': End
-            , 'Severity': VariedParameters.get('Severity')
-            , 'Caller': Caller
-            , 'CallStack': CallStack
-            , 'Action': VariedParameters.get('Action')
-            , 'RowCount': VariedParameters.get('RowCount')
-            , 'Source': VariedParameters.get('Source')
-            , 'Target': VariedParameters.get('Target')
-            , 'Result': VariedParameters.get('Result')
-            , 'File': VariedParameters.get('File')
-            , 'Parameters': Parameters
-        }
-
-        LogEntries.append(LogEntry) #Add the log entry to the collection of log entries for the current run
-
-    except Exception as e:
-        #Report the error
-        print('Error in LogStep on line', e.__traceback__.tb_lineno, ':', str(e))
+    LogEntries = Utilities.LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, **VariedParameters)
 
 def Main():
     #Variable(s) defined outside of this function, but set within this function
@@ -190,6 +152,7 @@ def Main():
     global FullPath_Configurations_File
     global FullPath_Inbound
     global FullPath_LogFile
+    global LogEntries
 
     #Set script-wide scalar variables
     Begin = datetime.now()
@@ -213,7 +176,6 @@ def Main():
         FullPath_Configurations_Column = os.path.join(FullPath_Configurations, ColumnConfigurationFilename)
         FullPath_Configurations_File = os.path.join(FullPath_Configurations, FileConfigurationFilename)
         FullPath_Inbound = os.path.join(FullPath_Root, 'Inbound')
-        FullPath_LogFile = os.path.join(FullPath_Root, 'Admin', 'Log.txt')
         if(InboundSourceFolder == ''): AllInboundFolders = True #If no source folder was specified
         elif(FullPath_Root not in InboundSourceFolder): AllInboundFolders = False #If source folder was specified, but not the full path (as expected)
 
@@ -222,8 +184,8 @@ def Main():
         if(Result != Result_Success): raise Exception('Error in ValidateRootParameters') #Log the error and don't continue
 
         #Validate the log file so that all subsequent steps & errors can be properly logged
-        Result = ValidateLogFile(CallStack, ExecutionGUID)
-        if(Result != Result_Success): raise Exception('Invalid Log File: ' + FullPath_LogFile + '\n' + Result) #Report the error and don't continue - can't log the error because log file is invalid
+        Result, FullPath_LogFile, IsValid_LogFile, LogEntries = Utilities.ValidateLogFile(CallStack, FullPath_Root, LogEntries, ExecutionGUID)
+        if(Result != Result_Success): raise Exception(Result) #Report the error and don't continue - can't log the error because log file is invalid
 
         #Mark the log file as valid only after it's passed all validation; otherwise, consider the log file invalid
         IsValid_LogFile = True
@@ -231,9 +193,11 @@ def Main():
         Result = Result_Success
 
     except Exception as e:
+        #The log file is invalid
         IsValid_LogFile = False
+
         #Report the error
-        print('Error in Main on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', Caller, '> Main on line', e.__traceback__.tb_lineno, ':', str(e))
 
     try:
         if IsValid_LogFile:
@@ -262,42 +226,18 @@ def Main():
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = File, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in Main on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', Caller, '> Main on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
-        if IsValid_LogFile: WriteToLogFile() #After everything has finished, even if an error occurred, log to the log file only if the log file was found valid
-
-def MoveFile(CallStack, FullPath_SourceFile, FullPath_TargetFile, ParentExecutionGUID):
-    Begin = datetime.now()
-    CallStack = CallStack + ' > MoveFile' #Add the current function to the call stack
-    ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
-    Parameters = {
-        'FullPath_SourceFile': FullPath_SourceFile
-        , 'FullPath_TargetFile': FullPath_TargetFile
-        , 'ParentExecutionGUID': ParentExecutionGUID
-    }
-    Result = Result_Success
-    try:
-        os.rename(FullPath_SourceFile, FullPath_TargetFile)
-
-        #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
-
-    except Exception as e:
-        #Return the error
-        Result = str(e)
-
-        #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
-
-        #Report the error
-        print('Error in MoveFile on line', e.__traceback__.tb_lineno, ':', str(e))
-
-    finally:
-        #Return the result
-        return Result
+        if IsValid_LogFile: Utilities.WriteToLogFile(DelimiterDefault, FullPath_LogFile, LogEntries)
 
 def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Configurations_File, InboundFolder, ParentExecutionGUID):
+    #Variable(s) defined outside of this function, but set within this function
+    global ConfigurationFileID
+    global Configurations_Column_CurrentFile
+    global Configurations_File_CurrentFile
+    global LogEntries
+
     Begin = datetime.now()
     InboundFile = ''
     CallStack = CallStack + ' > ProcessFile' #Add the current function to the call stack
@@ -323,7 +263,7 @@ def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Co
             Source = Source.replace('\\', '') #Remove all "\"
 
             #Get all file level configurations for the current source
-            Result = RetrieveConfigurations_File(CallStack, FullPath_Configurations_File, ParentExecutionGUID, Source)
+            Result, Configurations_File_CurrentFile, LogEntries = Utilities.RetrieveConfigurations_File(CallStack, FullPath_Configurations_File, LogEntries, ParentExecutionGUID, Source)
             if(Result != Result_Success): raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
 
             #Get ConfigurationID from the file level configurations for the current source
@@ -333,8 +273,8 @@ def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Co
             ExpectedDelimiter = Configurations_File_CurrentFile[['Delimiter']].iloc[0,0]
 
             #Get all column level configurations for the current ConfigurationFileID
-            Result = RetrieveConfigurations_Column(CallStack, ConfigurationFileID, FullPath_Configurations_Column, ParentExecutionGUID)
-            if(Result != Result_Success): raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
+            Result, Configurations_Column_CurrentFile, LogEntries = Utilities.RetrieveConfigurations_Column(CallStack, ConfigurationFileID, FullPath_Configurations_Column, LogEntries, ParentExecutionGUID)
+            if(Result != Result_Success): raise Exception('Error in RetrieveConfigurations_Column') #Log the error and don't continue
 
             #Read the current file into a dataframe
             CurrentFile = pd.read_csv(InboundFile, delimiter = ExpectedDelimiter)
@@ -346,7 +286,7 @@ def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Co
             ExpectedColumnsAsList = Configurations_Column_CurrentFile['ColumnName_File'].values.tolist() #Use the values in the column [ColumnName_File] in the column level configurations
 
             #Validate the actual column headers
-            Result = ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, ParentExecutionGUID)
+            Result, LogEntries = Utilities.ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, LogEntries, ParentExecutionGUID)
             if(Result != Result_Success): raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
 
             #Load the file to the Bronze layer
@@ -355,7 +295,7 @@ def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Co
 
             #Archive the file
             FullPath_TargetFile = os.path.join(FullPath_Archive, Source, FileName)
-            Result = MoveFile(CallStack, InboundFile, FullPath_TargetFile, ParentExecutionGUID)
+            Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_TargetFile, LogEntries, ParentExecutionGUID)
             if(Result != Result_Success): raise Exception('Error in MoveFile') #Log the error and don't continue
 
         InboundFile = '' #Make sure the values from previous file(s) aren't used
@@ -371,7 +311,7 @@ def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Co
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = InboundFile, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in ProcessFile on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', Caller, '> ProcessFile on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
@@ -417,161 +357,7 @@ def ProcessInboundFolder(CallStack, InboundFolder, ParentExecutionGUID):
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in ProcessInboundFolder on line', e.__traceback__.tb_lineno, ':', str(e))
-
-    finally:
-        #Return the result
-        return Result
-
-def RetrieveConfigurations_Column(CallStack, ConfigurationFileID, FullPath_Configurations_Column, ParentExecutionGUID):
-    #Variable(s) defined outside of this function, but set within this function
-    global Configurations_Column_CurrentFile
-
-    #Get all column level configurations for the specified ConfigurationFileID
-    Begin = datetime.now()
-    CallStack = CallStack + ' > RetrieveConfigurations_Column' #Add the current function to the call stack
-    ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
-    Parameters = {
-        'ConfigurationFileID': str(ConfigurationFileID)
-        , 'FullPath_Configurations_Column': FullPath_Configurations_Column
-        , 'ParentExecutionGUID': ParentExecutionGUID
-    }
-    Result = Result_Success
-    try:
-        #Retrieve all column level configurations for the specified ConfigurationFileID
-        Configurations_Column_All = pd.read_csv(FullPath_Configurations_Column, delimiter=DelimiterDefault)
-
-        #Filter for the value in the column [ConfigurationFileID] - this will not work properly if there are multiple records in the configuration file for the specified ConfigurationFileID
-        Configurations_Column_CurrentFile = Configurations_Column_All[Configurations_Column_All['ConfigurationFileID'] == int(ConfigurationFileID)]
-
-        #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
-
-    except Exception as e:
-        #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
-
-        #Report the error
-        print('Error in RetrieveConfigurations_Column on line', e.__traceback__.tb_lineno, ':', str(e))
-
-    finally:
-        #Return the result
-        return Result
-
-def RetrieveConfigurations_File(CallStack, FullPath_Configurations_File, ParentExecutionGUID, Source):
-    #Variable(s) defined outside of this function, but set within this function
-    global Configurations_File_CurrentFile
-
-    #Get all file level configurations for the current source
-    Begin = datetime.now()
-    CallStack = CallStack + ' > RetrieveConfigurations_File' #Add the current function to the call stack
-    ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
-    Parameters = {
-        'FullPath_Configurations_File': FullPath_Configurations_File
-        , 'ParentExecutionGUID': ParentExecutionGUID
-        , 'Source': Source
-    }
-    Result = Result_Success
-    try:
-        #Retrieve all file level configurations for the specified source
-        Configurations_File_All = pd.read_csv(FullPath_Configurations_File, delimiter=DelimiterDefault)
-
-        #Filter for the values in the column [Source]
-        Configurations_File_CurrentFile = Configurations_File_All[Configurations_File_All['Source'] == Source]
-        
-        #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
-        
-    except Exception as e:
-        #Return the error
-        Result = str(e)
-
-        #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
-
-        #Report the error
-        print('Error in RetrieveConfigurations_File on line', e.__traceback__.tb_lineno, ':', str(e))
-
-    finally:
-        #Return the result
-        return Result
-
-def ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, ParentExecutionGUID):
-    Begin = datetime.now()
-    CallStack = CallStack + ' > ValidateColumnHeader' #Add the current function to the call stack
-    ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
-    Parameters = {
-        'ActualColumnsAsList': ActualColumnsAsList
-        , 'ExpectedColumnsAsList': ExpectedColumnsAsList
-        , 'ParentExecutionGUID': ParentExecutionGUID
-    }
-    Result = Result_Success
-    try:
-        #Determine extra columns in actual
-        ExtraColumns = [item for item in ActualColumnsAsList if item not in ExpectedColumnsAsList]
-
-        #Determine columns missing from actual
-        MissingColumns = [item for item in ExpectedColumnsAsList if item not in ActualColumnsAsList]
-        
-        #Report extra & missing columns
-        if(len(ExtraColumns) > 0):
-            Result = 'Extra column(s) found: ' + str(ExtraColumns)
-            LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error & continue
-        if(len(MissingColumns) > 0):
-            Result = 'Column(s) missing: ' + str(MissingColumns)
-            LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error & continue
-        if(len(ExtraColumns) + len(MissingColumns) == 0):
-            #Log the step
-            LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
-        
-    except Exception as e:
-        #Return the error
-        Result = str(e)
-
-        #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
-
-        #Report the error
-        print('Error in ValidateColumnHeader on line', e.__traceback__.tb_lineno, ':', str(e))
-
-    finally:
-        #Return the result
-        return Result
-
-def ValidateLogFile(CallStack, ParentExecutionGUID):
-    Begin = datetime.now()
-    CallStack = CallStack + ' > ValidateLogFile' #Add the current function to the call stack
-    ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
-    Parameters = {
-        'ParentExecutionGUID': ParentExecutionGUID
-    }
-    Result = Result_Success
-    try:
-        #Validate the log file existence; create it if it's not found
-        if(FullPath_LogFile != '') and not os.path.exists(FullPath_LogFile):
-            os.mkdir(FullPath_LogFile) #Create an empty file
-            with open(FullPath_LogFile, 'w') as f: f.write(LogFileDefinition) #Add the correct column headers
-            Result = 'Log file was not found and therefore created: ' + FullPath_LogFile #Return the warning but continue and don't fail
-
-        #Put actual column headers into a list
-        LogFile = pd.read_csv(FullPath_LogFile, delimiter = DelimiterDefault)
-        ActualColumnsAsList = LogFile.columns.tolist()
-
-        #Validate the actual column headers
-        Result = ValidateColumnHeader(ActualColumnsAsList, CallStack, LogFileDefinition, ParentExecutionGUID)
-
-        #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = FullPath_LogFile, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
-
-    except Exception as e:
-        #Return the error
-        Result = str(e)
-
-        #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
-
-        #Report the error
-        print('Error in ValidateLogFile on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', Caller, '> ProcessInboundFolder on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
@@ -580,6 +366,7 @@ def ValidateLogFile(CallStack, ParentExecutionGUID):
 def ValidateRootParameters(CallStack, ParentExecutionGUID):
     Begin = datetime.now()
     CallStack = CallStack + ' > ValidateRootParameters' #Add the current function to the call stack
+    Continue = True
     ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
     Parameters = {
         'ColumnConfigurationFilename': ColumnConfigurationFilename
@@ -601,17 +388,21 @@ def ValidateRootParameters(CallStack, ParentExecutionGUID):
             Continue = False
             LogStep(Begin, CallStack, ExecutionGUID, Parameters, Result = 'Script parameter value missing: FullPath_Root', Severity = Severity_Error)
 
-        #Validate folders
-        if(FullPath_Root != '') and not os.path.exists(FullPath_Root):
-            os.mkdir(FullPath_Root) #If a value was provided but doesn't exist, create it
-            Result = 'Folder path was not found and therefore created: ' + FullPath_Root #Return the warning but continue and don't fail
-        if(InboundSourceFolder != '') and not os.path.exists(InboundSourceFolder):
-            os.mkdir(InboundSourceFolder) #If a value was provided but doesn't exist, create it
-            Result = 'Folder path was not found and therefore created: ' + InboundSourceFolder #Return the warning but continue and don't fail
-        
-        #Validate configuration files
-        if(FullPath_Configurations != '') and not os.path.exists(FullPath_Configurations): raise Exception('Error in FullPath_Configurations') #Log the error
-        
+        if Continue:
+            #Validate folders
+            if(FullPath_Root != '') and not os.path.exists(FullPath_Root):
+                os.mkdir(FullPath_Root) #If a value was provided but doesn't exist, create it
+                Result = 'Folder path was not found and therefore created: ' + FullPath_Root #Return the warning but continue and don't fail
+            if(InboundSourceFolder != '') and not os.path.exists(InboundSourceFolder):
+                os.mkdir(InboundSourceFolder) #If a value was provided but doesn't exist, create it
+                Result = 'Folder path was not found and therefore created: ' + InboundSourceFolder #Return the warning but continue and don't fail
+       
+            #Validate configuration files
+            if(FullPath_Configurations != '') and not os.path.exists(FullPath_Configurations): raise Exception('Error in FullPath_Configurations') #Log the error
+
+            #Log the step
+            LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
+
     except Exception as e:
         #Return the error
         Result = str(e)
@@ -620,21 +411,11 @@ def ValidateRootParameters(CallStack, ParentExecutionGUID):
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in ValidateRootParameters on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', Caller, '> ValidateRootParameters on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
         return Result
-
-def WriteToLogFile():
-    #Don't log the results of this function
-    try:
-        EntriesToLog = pd.DataFrame(LogEntries)
-        EntriesToLog = EntriesToLog.sort_values(by = 'Begin') #Explicitly order the entries by when they occurred, otherwise they'll be ordered by when they were logged, which means the first function called would be logged last
-        EntriesToLog.to_csv(FullPath_LogFile, sep = DelimiterDefault, header = False, index = False, mode = 'a')
-    except Exception as e:
-        #Report the error
-        print('Error in WriteToLogFile on line', e.__traceback__.tb_lineno, ':', str(e))
 
 #****************************************************************************************
 #ENTRY
