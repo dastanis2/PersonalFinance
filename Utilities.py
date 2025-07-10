@@ -93,7 +93,7 @@ def MoveFile(CallStack, FullPath_SourceFile, FullPath_TargetFile, LogEntries, Pa
         #Return the result
         return Result, LogEntries
 
-def RetrieveConfigurations_Column(CallStack, ConfigurationFileID, FullPath_Configurations_Column, LogEntries, ParentExecutionGUID):
+def RetrieveConfigurations_Column(CallStack, ConfigurationFileID, Configurations_Column_All, FullPath_Configurations_Column, LogEntries, ParentExecutionGUID):
     #Get all column level configurations for the specified ConfigurationFileID
     Begin = datetime.now()
     CallStack = CallStack + ' > RetrieveConfigurations_Column' #Add the current function to the call stack
@@ -105,8 +105,8 @@ def RetrieveConfigurations_Column(CallStack, ConfigurationFileID, FullPath_Confi
     }
     Result = Result_Success
     try:
-        #Retrieve all column level configurations for the specified ConfigurationFileID
-        Configurations_Column_All = pd.read_csv(FullPath_Configurations_Column, delimiter = DelimiterDefault)
+        #Retrieve all column level configurations for the specified ConfigurationFileID, but only once per process execution
+        if(len(Configurations_Column_All) == 0): Configurations_Column_All = pd.read_csv(FullPath_Configurations_Column, delimiter = DelimiterDefault)
 
         #Filter for the value in the column [ConfigurationFileID] - this will not work properly if there are multiple records in the configuration file for the specified ConfigurationFileID
         Configurations_Column_OneFile = Configurations_Column_All[Configurations_Column_All['ConfigurationFileID'] == int(ConfigurationFileID)]
@@ -123,9 +123,9 @@ def RetrieveConfigurations_Column(CallStack, ConfigurationFileID, FullPath_Confi
 
     finally:
         #Return the result
-        return Result, Configurations_Column_OneFile, LogEntries
+        return Result, Configurations_Column_All, Configurations_Column_OneFile, LogEntries
 
-def RetrieveConfigurations_File(CallStack, FullPath_Configurations_File, LogEntries, ParentExecutionGUID, Source):
+def RetrieveConfigurations_File(CallStack, Configurations_File_All, FullPath_Configurations_File, LogEntries, ParentExecutionGUID, Source):
     #Variable(s) defined outside of this function, but set within this function
     global Configurations_File_CurrentFile
 
@@ -140,8 +140,8 @@ def RetrieveConfigurations_File(CallStack, FullPath_Configurations_File, LogEntr
     }
     Result = Result_Success
     try:
-        #Retrieve all file level configurations for the specified source
-        Configurations_File_All = pd.read_csv(FullPath_Configurations_File, delimiter = DelimiterDefault)
+        #Retrieve all file level configurations for the specified source, but only once per process execution
+        if(len(Configurations_File_All) == 0): Configurations_File_All = pd.read_csv(FullPath_Configurations_File, delimiter = DelimiterDefault)
 
         #Filter for the values in the column [Source]
         Configurations_File_OneFile = Configurations_File_All[Configurations_File_All['Source'] == Source]
@@ -161,7 +161,7 @@ def RetrieveConfigurations_File(CallStack, FullPath_Configurations_File, LogEntr
 
     finally:
         #Return the result
-        return Result, Configurations_File_OneFile, LogEntries
+        return Result, Configurations_File_All, Configurations_File_OneFile, LogEntries
 
 def ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, LogEntries, ParentExecutionGUID):
     Begin = datetime.now()
@@ -222,7 +222,9 @@ def ValidateLogFile(CallStack, FullPath_Root, LogEntries, ParentExecutionGUID):
 
         #Validate the log file existence; create it if it's not found
         if(FullPath_LogFile != '') and not os.path.exists(FullPath_LogFile):
-            os.mkdir(FullPath_LogFile) #Create an empty file
+            #Create an empty file
+            os.makedirs(os.path.dirname(FullPath_LogFile), exist_ok = True)
+            with open(FullPath_LogFile, 'w') as f: f.write('|'.join(LogFileDefinition) + '\n')
             with open(FullPath_LogFile, 'w') as f: f.write(LogFileDefinition) #Add the correct column headers
             Result = 'Log file was not found and therefore created: ' + FullPath_LogFile #Return the warning but continue and don't fail
 
