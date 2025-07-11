@@ -1,0 +1,1 @@
+ColumnName_Bronze|ColumnName_File|ColumnName_Silver|ColumnName_Gold|ConfigurationColumnID|ConfigurationFileID|Datatype

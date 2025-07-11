@@ -1,0 +1,1 @@
+ConfigurationFileID|Delimiter|FileNamePattern|Source|SourceFolder|TextQualifier
