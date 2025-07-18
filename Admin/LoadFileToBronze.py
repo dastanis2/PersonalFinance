@@ -62,6 +62,17 @@ InboundSourceFolder = r''
 #****************************************************************************************
 AllInboundFolders = True
 Bronze = pd.DataFrame()
+Bronze_Transaction_Expected = [
+    'Amount'
+    , 'Category'
+    , 'Date'
+    , 'Description'
+    , 'IngestDatetime'
+    , 'Source'
+    , 'SourceFile'
+]
+Bronze_Transaction_Existing = pd.DataFrame()
+Bronze_Transaction_New = pd.DataFrame(columns = Bronze_Transaction_Expected)
 Caller = os.path.realpath(__file__)
 ConfigurationFileID = 0
 Configurations_Column_All = pd.DataFrame()
@@ -71,6 +82,7 @@ Configurations_File_CurrentFile = pd.DataFrame()
 DelimiterDefault = r'|'
 FullPath_Archive = ''
 FullPath_Bronze = ''
+FullPath_Bronze_Transaction = ''
 FullPath_Configurations = ''
 FullPath_Configurations_File = ''
 FullPath_Configurations_Column = ''
@@ -95,37 +107,56 @@ class FailWithoutLogging(Exception):
 #****************************************************************************************
 #FUNCTIONS
 #****************************************************************************************
-def CopyToBronze(CallStack, Configurations_Column_CurrentFile, ParentExecutionGUID, Source, ValidRecords):
+def CopyToBronze(CallStack, ParentExecutionGUID, ValidRecords):
+    #Variable(s) defined outside of this function, but set within this function
+    global Bronze
+    global Bronze_Transaction_New
+
     Begin = datetime.now()
-    BronzeFile = os.path.join(FullPath_Bronze, f'Bronze.{Source}.txt')
     CallStack = CallStack + ' > CopyToBronze' #Add the current function to the call stack
     ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
     Parameters = {
         'ParentExecutionGUID': ParentExecutionGUID
-        , 'Source': Source
     }
     Result = Result_Success
     try:
-        #Get all existing Bronze records for comparison
-        ExistingBronze = pd.read_csv(BronzeFile, delimiter = DelimiterDefault)
-        RecordsToCopy = ValidRecords
-
-        #Rename the columns to match ColumnName_Bronze from the column level configurations
-        ColumnMapping = dict_df = dict(zip(Configurations_Column_CurrentFile['ColumnName_File'], Configurations_Column_CurrentFile['ColumnName_Bronze']))
-        RecordsToCopy.rename(columns = ColumnMapping, inplace = True)
 
         #Remove duplicates
-        RecordsToCopy.drop_duplicates(keep = 'last', inplace = True)
+        RecordsToCopy = ValidRecords.drop_duplicates(keep = 'last')
 
-        #Remove records already in Bronze
-        if len(ExistingBronze) > 0: RecordsToCopy = RecordsToCopy.merge(ExistingBronze, indicator = True, how = 'outer').query('_merge == "left_only"').drop('_merge', axis = 1)
-
-        #Copy the records to the Bronze file
-        RecordsToCopy.to_csv(BronzeFile, sep = DelimiterDefault, header = False, index = False, mode = 'a')
+        #Get the row count of the records to copy to bronze
         RowCount = len(RecordsToCopy)
 
+        #If there are records to copy
+        if(RowCount > 0):
+            #Apply any formulas to the columns in RecordsToCopy (such as data type conversions, column replacments, etc.)
+            for _, config_row in Configurations_Column_CurrentFile.drop_duplicates(subset = ['ColumnName_Bronze']).iterrows():
+                bronze_col = config_row['ColumnName_Bronze']
+                formula = config_row.get('Transformation_FileToBronze', None)
+                if bronze_col and isinstance(formula, str) and formula.strip(): #Only create and populate if there is a formula
+                    RecordsToCopy[bronze_col] = RecordsToCopy.apply(
+                        lambda row: eval(formula, {'row': row, 'pd': pd, 'IngestDatetime': datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}) #Put the formula for IngestDatetime here so that it is written only once (instead of multiple times in the column level configuration file) but applied to every row, regardless of file or source
+                        , axis = 1
+                    )
+
+            #Map columns from File to Bronze without creating duplicates
+            seen = set()
+            unique_mapping = {}
+            for file_col, bronze_col in zip(Configurations_Column_CurrentFile['ColumnName_File'], Configurations_Column_CurrentFile['ColumnName_Bronze']):
+                if pd.notnull(file_col) and pd.notnull(bronze_col) and bronze_col not in seen:
+                    unique_mapping[file_col] = bronze_col
+                    seen.add(bronze_col)
+            ColumnMapping = unique_mapping
+            RecordsToCopy = RecordsToCopy.rename(columns = ColumnMapping)
+
+            #Align RecordsToCopy to ExistingBronze columns by dropping any columns not in ExistingBronze
+            RecordsToCopy = RecordsToCopy[[col for col in Bronze_Transaction.columns if col in RecordsToCopy.columns]]
+
+            #Copy the records to the Bronze Transaction file
+            RecordsToCopy.to_csv(FullPath_Bronze_Transaction, sep = DelimiterDefault, header = False, index = False, mode = 'a')
+
         #Clear out Bronze so that only it will contain only records from the current source
-        Bronze = Bronze[0:0]
+        Bronze = pd.DataFrame()
 
         #Log the step
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, RowCount = RowCount, Severity = Severity_Info)
@@ -155,8 +186,10 @@ def LogStep(Begin, CallStack, ExecutionGUID, Parameters, **VariedParameters): #T
 
 def Main():
     #Variable(s) defined outside of this function, but set within this function
+    global Bronze_Transaction
     global FullPath_Archive
     global FullPath_Bronze
+    global FullPath_Bronze_Transaction
     global FullPath_Configurations
     global FullPath_Configurations_Column
     global FullPath_Configurations_File
@@ -169,6 +202,7 @@ def Main():
     CallStack = r'Main'
     ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
     File = ''
+    IsValid_BronzeTransactionFile = False
     IsValid_LogFile = False
     Parameters = {
         'ColumnConfigurationFilename': ColumnConfigurationFilename
@@ -182,6 +216,7 @@ def Main():
         #Set script-wide calculated variables - included in the "try/except" block in case an expression fails
         FullPath_Archive = os.path.join(FullPath_Root, 'Archive')
         FullPath_Bronze = os.path.join(FullPath_Root, 'Bronze')
+        FullPath_Bronze_Transaction = os.path.join(FullPath_Bronze, 'Bronze.Transaction.txt')
         FullPath_Configurations = os.path.join(FullPath_Root, 'Admin')
         FullPath_Configurations_Column = os.path.join(FullPath_Configurations, ColumnConfigurationFilename)
         FullPath_Configurations_File = os.path.join(FullPath_Configurations, FileConfigurationFilename)
@@ -197,8 +232,17 @@ def Main():
         Result, FullPath_LogFile, IsValid_LogFile, LogEntries = Utilities.ValidateLogFile(CallStack, FullPath_Root, LogEntries, ExecutionGUID)
         if(Result != Result_Success): raise Exception(Result) #Report the error and don't continue - can't log the error because log file is invalid
 
-        #Mark the log file as valid only after it's passed all validation; otherwise, consider the log file invalid
+        #Mark the log file as valid only after it's passed all validation; otherwise, consider it invalid
         IsValid_LogFile = True
+
+        #Confirm Bronze Transaction layout (should never change, but confirm it anyway)
+        Bronze_Transaction = pd.read_csv(FullPath_Bronze_Transaction, delimiter = DelimiterDefault)
+        ActualColumnsAsList = Bronze_Transaction.columns.tolist()
+        Result, LogEntries = Utilities.ValidateColumnHeader(ActualColumnsAsList, CallStack, Bronze_Transaction_Expected, LogEntries, ExecutionGUID)
+        if(Result != Result_Success): raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
+
+        #Mark the Bronze Transaction file as valid only after it's passed all validation; otherwise, consider it invalid
+        IsValid_BronzeTransactionFile = True
 
         Result = Result_Success
 
@@ -210,7 +254,7 @@ def Main():
         print('Error in', Caller, '> Main on line', e.__traceback__.tb_lineno, ':', str(e))
 
     try:
-        if IsValid_LogFile:
+        if(IsValid_LogFile & IsValid_BronzeTransactionFile):
             #Loop through the Inbound folder & sub-folder(s) looking for files to ingest
             RootInboundFolder = os.path.join(FullPath_Root, 'Inbound')
             if AllInboundFolders: #Process files in all Inbound sub-folders
@@ -274,7 +318,7 @@ def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Co
 
             #Get all file level configurations for the current source
             Result, Configurations_File_All, Configurations_File_CurrentFile, LogEntries = Utilities.RetrieveConfigurations_File(CallStack, Configurations_File_All, FullPath_Configurations_File, LogEntries, ParentExecutionGUID, Source)
-            if(Result != Result_Success): raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
+            if(Result != Result_Success): raise Exception('Error in RetrieveConfigurations_File') #Log the error and don't continue
 
             #Get ConfigurationID from the file level configurations for the current source
             ConfigurationFileID = Configurations_File_CurrentFile[['ConfigurationFileID']].iloc[0,0] #Use .iloc[0,0] to pinpoint the exact cell and exclude the column header in the return value
@@ -289,12 +333,18 @@ def ProcessFile(CallStack, FileName, FullPath_Configurations_Column, FullPath_Co
             #Read the current file into a dataframe
             CurrentFile = pd.read_csv(InboundFile, delimiter = ExpectedDelimiter)
 
+            #Add "standard" columns
+            CurrentFile['IngestDatetime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f') #Add the current date/time to the IngestDatetime column
+            CurrentFile['Source'] = Source #Add the Inbound source folder
+            CurrentFile['SourceFile'] = FileName #Add the file name of the current file
+
             if not(CurrentFile.empty): #Continue only if there is data in the current file
                 #Put actual column headers into a list
                 ActualColumnsAsList = CurrentFile.columns.tolist()
 
                 #Put expected column headers into a list
                 ExpectedColumnsAsList = Configurations_Column_CurrentFile['ColumnName_File'].values.tolist() #Use the values in the column [ColumnName_File] in the column level configurations
+                ExpectedColumnsAsList = [x for x in ExpectedColumnsAsList if pd.notnull(x)] #Remove any null values from the list
 
                 #Validate the actual column headers
                 Result, LogEntries = Utilities.ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, LogEntries, ParentExecutionGUID)
@@ -366,8 +416,11 @@ def ProcessInboundFolder(CallStack, InboundFolder, ParentExecutionGUID):
                 if(Result != Result_Success): raise Exception('Error in ProcessFile') #Log the error and don't continue
 
             #Copy all records ingested from the current Inbound folder into the Bronze layer
-            Result = CopyToBronze(CallStack, Configurations_Column_CurrentFile, ParentExecutionGUID, Source, Bronze)
+            Result = CopyToBronze(CallStack, ParentExecutionGUID, Bronze)
             if(Result != Result_Success): raise Exception('Error in CopyToBronze') #Log the error and don't continue
+
+        #Write Bronze Transaction records to file
+        Result = WriteToBronzeFile(CallStack, ExecutionGUID)
 
         #Log the step
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
@@ -439,6 +492,33 @@ def ValidateRootParameters(CallStack, ParentExecutionGUID):
 
         #Report the error
         print('Error in', Caller, '> ValidateRootParameters on line', e.__traceback__.tb_lineno, ':', str(e))
+
+    finally:
+        #Return the result
+        return Result
+
+def WriteToBronzeFile(CallStack, ParentExecutionGUID):
+    Begin = datetime.now()
+    CallStack = CallStack + ' > WriteToBronzeFile' #Add the current function to the call stack
+    ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
+    Parameters = {
+        'ParentExecutionGUID': ParentExecutionGUID
+    }
+    Result = Result_Success
+    try:
+        #Write new Bronze Transaction records to the Bronze Transaction file
+        if(len(Bronze_Transaction_New) > 0): Bronze_Transaction_New.to_csv(FullPath_Bronze_Transaction, sep = DelimiterDefault, header = False, index = False, mode = 'a')
+    except Exception as e:
+        ErrorMessage = 'Error on line ' + str(e.__traceback__.tb_lineno) + ': ' + str(e)
+
+        #Return the error
+        Result = ErrorMessage
+
+        #Log the error
+        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = ErrorMessage, Severity = Severity_Error)
+
+        #Report the error
+        print('Error in', Caller, '> WriteToBronzeFile on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
