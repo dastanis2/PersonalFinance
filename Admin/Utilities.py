@@ -5,10 +5,11 @@ from datetime import datetime
 from pathlib import Path
 
 #Empty/static variables
-Caller = os.path.realpath(__file__)
+CallingObject = ''
 ColumnConfigurationFilename = ''
 Configurations_Column_All = pd.DataFrame()
 Configurations_File_All = pd.DataFrame()
+CurrentScriptFile = os.path.realpath(__file__)
 DelimiterDefault = r'|'
 ExpectedDelimiter = ''
 FullPath_Archive = ''
@@ -42,7 +43,7 @@ Result_Success = r'Success'
 Severity_Error = r'Error'
 Severity_Info = r'Info'
 
-def LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, **VariedParameters): #The explicit parameters are required; anything passed into **VariedParameters is optional; different parameters may be passed into **VariedParameters
+def LogStep(Begin, Caller, CallStack, ExecutionGUID, LogEntries, Parameters, **VariedParameters): #The explicit parameters are required; anything passed into **VariedParameters is optional; different parameters may be passed into **VariedParameters
     #Don't log this function
     try:
         Begin = Begin.strftime('%Y-%m-%d %H:%M:%S.%f') #Format the value as YYYY-MM-DD HH:MM:SS.ms
@@ -69,7 +70,7 @@ def LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, **VariedPar
 
     except Exception as e:
         #Report the error
-        print('Error in', Caller, '> LogStep on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', CurrentScriptFile, '> LogStep on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         return LogEntries
@@ -88,17 +89,17 @@ def MoveFile(CallStack, FullPath_SourceFile, FullPath_TargetFile, LogEntries, Pa
         os.rename(FullPath_SourceFile, FullPath_TargetFile)
 
         #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
 
     except Exception as e:
         #Return the error
         Result = str(e)
 
         #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in', Caller, '> MoveFile on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', CurrentScriptFile, '> MoveFile on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
@@ -128,7 +129,7 @@ def RetrieveConfigurations_Column(CallStack, LogEntries, ParentExecutionGUID):
         LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, File = FullPath_Configurations_Column, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in', Caller, '> RetrieveConfigurations_Column on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', CurrentScriptFile, '> RetrieveConfigurations_Column on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
@@ -152,24 +153,25 @@ def RetrieveConfigurations_File(CallStack, LogEntries, ParentExecutionGUID):
         Configurations_File_All = pd.read_csv(FullPath_Configurations_File, delimiter = DelimiterDefault)
 
         #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, File = FullPath_Configurations_File, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info) #Begin, CallStack, ExecutionGUID, LogEntries, Parameters, **VariedParameters
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, File = FullPath_Configurations_File, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info) #Begin, CallStack, ExecutionGUID, LogEntries, Parameters, **VariedParameters
         
     except Exception as e:
         #Return the error
         Result = str(e)
 
         #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, File = FullPath_Configurations_File, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, File = FullPath_Configurations_File, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in', Caller, '> RetrieveConfigurations_File on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', CurrentScriptFile, '> RetrieveConfigurations_File on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
         return Result, LogEntries
 
-def SetGlobalVariables(CallStack, LogEntries, ParentExecutionGUID):
+def SetGlobalVariables(Caller, CallStack, LogEntries, ParentExecutionGUID):
     #Set the global variables
+    global CallingObject
     global DelimiterDefault
     global ExpectedDelimiter
     global FullPath_Archive
@@ -191,6 +193,7 @@ def SetGlobalVariables(CallStack, LogEntries, ParentExecutionGUID):
     }
     Result = Result_Success
     try:
+        CallingObject = Caller
         DelimiterDefault = r'|'
         FullPath_Root = str(Path(__file__).parent.parent) #Get the root path of the project; set first so that all other paths can be set relative to it
         FullPath_Archive = os.path.join(FullPath_Root, 'Archive')
@@ -203,17 +206,17 @@ def SetGlobalVariables(CallStack, LogEntries, ParentExecutionGUID):
         FullPath_Inbound = os.path.join(FullPath_Root, 'Inbound')
 
         #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
 
     except Exception as e:
         #Return the error
         Result = str(e)
 
-        #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
-
         #Report the error
-        print('Error in', Caller, '> SetGlobalVariables on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', CurrentScriptFile, '> SetGlobalVariables on line', e.__traceback__.tb_lineno, ':', str(e))
+
+        #Log the error
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
     finally:
         #Return the result
@@ -241,23 +244,23 @@ def ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, 
         if(len(ExtraColumns) > 0):
             Issue = 'ExtraColumns'
             Result = 'Extra column(s) found: ' + str(ExtraColumns)
-            LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error & continue
+            LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error & continue
         if(len(MissingColumns) > 0):
             if Issue != '': Issue = Issue + '.'
             Issue += 'MissingColumns'
             if(len(Result) > 0): Result += '; '
             Result += 'Column(s) missing: ' + str(MissingColumns)
-            LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error & continue
+            LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error & continue
         if(len(ExtraColumns) + len(MissingColumns) == 0):
             #Log the step
-            LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
+            LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
         
     except Exception as e:
         #Return the error
         Result = str(e)
 
         #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
         print('Error in ValidateColumnHeader on line', e.__traceback__.tb_lineno, ':', str(e))
@@ -298,17 +301,17 @@ def ValidateLogFile(CallStack, LogEntries, ParentExecutionGUID):
         IsValid_LogFile = (Result == Result_Success)
 
         #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, File = FullPath_LogFile, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, File = FullPath_LogFile, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Info)
 
     except Exception as e:
         #Return the error
         Result = str(e)
 
         #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = str(e), Severity = Severity_Error)
 
         #Report the error
-        print('Error in', Caller, '> ValidateLogFile on line', e.__traceback__.tb_lineno, ':', str(e))
+        print('Error in', CurrentScriptFile, '> ValidateLogFile on line', e.__traceback__.tb_lineno, ':', str(e))
 
     finally:
         #Return the result
@@ -334,4 +337,4 @@ def WriteToLogFile(CallStack, LogEntries, ParentExecutionGUID):
         EntriesToLog.to_csv(FullPath_LogFile, sep = DelimiterDefault, header = False, index = False, mode = 'a') #Write the log entries to the log file
     except Exception as e:
         #Report the error
-        print('Error at', Begin, 'in', Caller, '> WriteToLogFile on line', e.__traceback__.tb_lineno, ':', str(e), '\n', 'Parameters:', Parameters)
+        print('Error at', Begin, 'in', CurrentScriptFile, '> WriteToLogFile on line', e.__traceback__.tb_lineno, ':', str(e), '\n', 'Parameters:', Parameters)
