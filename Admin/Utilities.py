@@ -239,7 +239,7 @@ def ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, 
         
         #Report extra & missing columns
         if(len(ExtraColumns) > 0):
-            Issue = str(ExtraColumns)
+            Issue = 'ExtraColumns'
             Result = 'Extra column(s) found: ' + str(ExtraColumns)
             LogStep(Begin, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error & continue
         if(len(MissingColumns) > 0):
