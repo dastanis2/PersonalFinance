@@ -4,22 +4,21 @@ DESCRIPTION
     Load all valid files into the Bronze layer 
 
 STEPS
-	1. Set script-wide calculated variables
+	1. Set the value of script-wide variables
 	2. Validate the log file
 	3. Validate root parameters
-	4. For each sub-folder in the Inbound folder
-		4.1. For each file in the current Inbound sub-folder
-			4.1.1. Retrieve file level configuration values for the current file
-			4.1.2. Retrieve column level configuration values for the current file
-			4.1.3. Validate the column header of the current file
-			4.1.4. Copy the current file to the Bronze layer
-			4.1.5. Archive the current file
-	5. Write all steps and errors to the log file
-
-PARAMETERS
-    InboundSourceFolder
-        Datatype: string
-        Expected: either empty string, nothing, or a valid folder name in the root bronze folder (i.e. 'BankABC')
+   	4. Retrieve all file level configuration values
+	5. Retrieve all column level configuration values
+    6. Confirm Bronze Transaction layout
+	7. For each sub-folder in the Inbound folder
+    	7.1. Filter file level configuration values for the current file
+		7.2. Filter column level configuration values for the current file
+		7.3. For each file in the current Inbound sub-folder
+			7.3.1. Validate the column header of the current file
+			7.3.2. Copy the current file to the in-memory Bronze table
+			7.3.3. Archive the current file
+        7.4. Copy the in-memory Bronze table to the Bronze Transaction file
+	8. Write all steps and errors to the log file
 """
 #****************************************************************************************
 
@@ -39,6 +38,7 @@ from pathlib import Path
 #   These need to be set by whatever calls this script
 #****************************************************************************************
 InboundSourceFolder = r''
+ParentExecutionGUID = '' #This is set by the calling object (script or otherwise); it is used to link all steps and errors together for the entire process in the log file
 
 #****************************************************************************************
 #GLOBAL VARIABLES
@@ -52,6 +52,7 @@ Bronze_Transaction_Expected = [
     , 'Category'
     , 'Date'
     , 'Description'
+    , 'ExecutionGUID'
     , 'IngestDatetime'
     , 'Source'
     , 'SourceFile'
@@ -196,7 +197,9 @@ def Main():
         Bronze_Transaction = pd.read_csv(Utilities.FullPath_Bronze_Transaction, delimiter = Utilities.DelimiterDefault)
         ActualColumnsAsList = Bronze_Transaction.columns.tolist()
         Result, Issue, LogEntries = Utilities.ValidateColumnHeader(ActualColumnsAsList, CallStack, Bronze_Transaction_Expected, LogEntries, ExecutionGUID)
-        if(Result != Utilities.Result_Success): raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
+        if(Result != Utilities.Result_Success): 
+            print('Error in ValidateColumnHeader:', Result)
+            raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
 
         #Mark the Bronze Transaction file as valid only after it's passed all validation; otherwise, consider it invalid
         IsValid_BronzeTransactionFile = True
@@ -224,14 +227,14 @@ def Main():
         if not InboundFileFound: Result = Utilities.Result_Success
 
         #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, Result = Result, Severity = Utilities.Severity_Info)
+        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Utilities.Severity_Info)
 
     except Exception as e:
         #Return the error
         Result = str(e)
 
         #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = File, Result = str(e), Severity = Utilities.Severity_Error)
+        LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, File = File, Result = str(e), Severity = Utilities.Severity_Error)
 
         #Report the error
         print('Error in', Caller, '> Main on line', e.__traceback__.tb_lineno, ':', str(e))
@@ -253,6 +256,7 @@ def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
         , 'ParentExecutionGUID': ParentExecutionGUID
         , 'Source': Source
     }
+    RowCount = 0
     Result = Utilities.Result_Success
     try:
         FileExtension = os.path.splitext(FileName)[1] #Get the file extension of the current file
@@ -264,6 +268,7 @@ def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
             CurrentFile = pd.read_csv(InboundFile, delimiter = ExpectedDelimiter)
 
             #Add "standard" columns
+            CurrentFile['ExecutionGUID'] = ExecutionGUID #Add the ExecutionGUID
             CurrentFile['IngestDatetime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f') #Add the current date/time to the IngestDatetime column
             CurrentFile['Source'] = Source #Add the Inbound source folder
             CurrentFile['SourceFile'] = FileName #Add the file name of the current file
@@ -280,22 +285,29 @@ def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
                 Issue = ''
                 Result, Issue, LogEntries = Utilities.ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, LogEntries, ParentExecutionGUID)
                 if(Result != Utilities.Result_Success): #There was an issue validating the column header
-                    FileName = FileName.replace(FileExtension, '') + '.InvalidColumnHeader.' + Issue + '.' + FileExtension #Change the file name to indicate that it has an invalid column header
-                    FullPath_Error_CurrentFile = os.path.join(Utilities.FullPath_Error, FileName) #Set the full path of the error file
-                    Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_Error_CurrentFile, LogEntries, ParentExecutionGUID) #Move the file to the Error folder
-                    raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
+                    #Rename the file to indicate the issue found
+                    FileName = FileName.replace(FileExtension, '') + '.InvalidColumnHeader.' + Issue + FileExtension #Change the file name to indicate that it has an invalid column header
+                    FullPath_Error_CurrentSource = os.path.join(Utilities.FullPath_Error, Source) #Set the path of the error folder, including the current source folder
+                    if(FullPath_Error_CurrentSource != '') and not os.path.exists(FullPath_Error_CurrentSource): os.makedirs(FullPath_Error_CurrentSource, exist_ok = True) #Create the error folder if it doesn't exist
+                    FullPath_Error_CurrentFile = os.path.join(FullPath_Error_CurrentSource, FileName) #Set the full path of the error file
+                    
+                    #Move the file to the appropriate Error folder                    
+                    Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_Error_CurrentFile, LogEntries, ParentExecutionGUID)
+                else: #The file passed validation
+                    #Load the file to the in-memory Bronze table, which should only contain records from all processed files in the current Inbound sub-folder
+                    RowCount = len(CurrentFile) #Get the row count of the current file
+                    if(len(Bronze) == 0): Bronze = CurrentFile #If the Bronze dataframe is empty, set it to the current file
+                    else: Bronze.concat([Bronze, CurrentFile], axis = 1) #Otherwise, append the current file to it
 
-                #Load the file to the Bronze layer
-                if(len(Bronze) == 0): Bronze = CurrentFile #If the Bronze dataframe is empty, set it to the current file
-                else: Bronze.concat([Bronze, CurrentFile], axis = 1) #Otherwise, append the current file to it
-
-                #Archive the file
-                FullPath_TargetFile = os.path.join(Utilities.FullPath_Archive, Source, FileName)
-                Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_TargetFile, LogEntries, ParentExecutionGUID)
-                if(Result != Utilities.Result_Success): raise Exception('Error in MoveFile') #Log the error and don't continue
+                    #Archive the file
+                    FullPath_Archive_CurrentSource = os.path.join(Utilities.FullPath_Archive, Source) #Set the path of the archive folder, including the current source folder
+                    if(FullPath_Archive_CurrentSource != '') and not os.path.exists(FullPath_Archive_CurrentSource): os.makedirs(FullPath_Archive_CurrentSource, exist_ok = True) #Create the archive folder if it doesn't exist
+                    FullPath_TargetFile = os.path.join(FullPath_Archive_CurrentSource, FileName)
+                    Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_TargetFile, LogEntries, ParentExecutionGUID)
+                    if(Result != Utilities.Result_Success): raise Exception('Error in MoveFile') #Log the error and don't continue
 
         #Log the step
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = InboundFile, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Utilities.Severity_Info)
+        LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = InboundFile, ParentExecutionGUID = ParentExecutionGUID, Result = Result, RowCount = RowCount, Severity = Utilities.Severity_Info)
 
     except Exception as e:
         ErrorMessage = 'Error on line ' + str(e.__traceback__.tb_lineno) + ': ' + str(e)
@@ -304,7 +316,7 @@ def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
         Result = ErrorMessage
 
         #Log the error
-        LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = InboundFile, ParentExecutionGUID = ParentExecutionGUID, Result = ErrorMessage, Severity = Utilities.Severity_Error)
+        LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = InboundFile, ParentExecutionGUID = ParentExecutionGUID, Result = ErrorMessage, RowCount = RowCount, Severity = Utilities.Severity_Error)
 
         #Report the error
         print('Error in', Caller, '> ProcessInboundFile on line', e.__traceback__.tb_lineno, ':', str(e))
@@ -362,9 +374,8 @@ def ProcessInboundFolder(CallStack, InboundFolder, ParentExecutionGUID):
             #Ingest each file in the current Inbound folder
             for FileName in os.listdir(InboundFolder):
                 Result = ProcessInboundFile(CallStack, FileName, ExecutionGUID, Source)
-                if(Result != Utilities.Result_Success): raise Exception('Error in ProcessInboundFile') #Log the error and don't continue
 
-            #Copy all records ingested from the current Inbound folder into the Bronze layer
+            #Copy all records ingested from the current Inbound folder into the Bronze layer, even if a file failed
             Result = CopyToBronze(CallStack, ParentExecutionGUID, Bronze)
             if(Result != Utilities.Result_Success): raise Exception('Error in CopyToBronze') #Log the error and don't continue
 
