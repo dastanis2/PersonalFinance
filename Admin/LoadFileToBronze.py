@@ -69,7 +69,6 @@ import pandas as pd
 import Utilities
 import uuid
 from datetime import datetime
-from pathlib import Path
 
 #****************************************************************************************
 #GLOBAL VARIABLES
@@ -77,27 +76,14 @@ from pathlib import Path
 #   These variables can change value by any function
 #****************************************************************************************
 AllInboundFolders = True
-Bronze = pd.DataFrame()
-Bronze_Transaction_Expected = [
-    'Amount'
-    , 'Category'
-    , 'Date'
-    , 'Description'
-    , 'ExecutionGUID'
-    , 'IngestDatetime'
-    , 'Source'
-    , 'SourceFile'
-]
-Bronze_Transaction_Existing = pd.DataFrame()
-Bronze_Transaction_New = pd.DataFrame(columns = Bronze_Transaction_Expected)
 ConfigurationFileID = 0
 Configurations_Column_CurrentFile = pd.DataFrame()
 Configurations_File_CurrentFile = pd.DataFrame()
 CurrentScriptFile = os.path.realpath(__file__)
 ExpectedDelimiter = ''
-FullPath_CurrentSource_Error = ''
-FullPath_CurrentSource_Inbound = ''
-FullPath_CurrentSource_Silver_Inbound = ''
+FullPath_Bronze_Error_CurrentSource = ''
+#FullPath_Bronze_Inbound_CurrentSource = ''
+FullPath_Silver_Inbound_CurrentSource = ''
 InboundFileFound = False
 IsValid_LogFile = False
 LogEntries = []
@@ -120,6 +106,7 @@ def Main(InboundSourceFolder = '', ParentExecutionGUID = ''):
     Begin = datetime.now()
     CurrentFunction = r'Main'
     ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
+    FullPath_Bronze_Inbound_Source = ''
     Parameters = {
         'InboundSourceFolder': InboundSourceFolder
         , 'ParentExecutionGUID': ParentExecutionGUID
@@ -129,7 +116,7 @@ def Main(InboundSourceFolder = '', ParentExecutionGUID = ''):
     #Perform the actions that could cause the entire script to fail; if this block fails, report the failure, don't log the failure, and don't continue
     try:
         #Set global variables to be used downstream
-        Result, LogEntries = Utilities.SetGlobalVariables(CurrentScriptFile, CurrentFunction, LogEntries, ExecutionGUID)
+        LogEntries, Result = Utilities.SetGlobalVariables(CurrentScriptFile, CurrentFunction, LogEntries, ExecutionGUID)
         if(Result != Utilities.Result_Success): raise Exception('Error in SetGlobalVariables') #Log the error and don't continue
 
         #Set script-wide calculated variables - included in the "try/except" block in case an expression fails
@@ -137,15 +124,15 @@ def Main(InboundSourceFolder = '', ParentExecutionGUID = ''):
         elif(Utilities.FullPath_Root not in InboundSourceFolder): AllInboundFolders = False #If source folder was specified, but not the full path (as expected)
 
         #Validate the log file so that all subsequent steps & errors can be properly logged
-        Result, LogEntries = Utilities.ValidateLogFile(CurrentFunction, LogEntries, ExecutionGUID)
+        LogEntries, Result = Utilities.ValidateLogFile(CurrentFunction, LogEntries, ExecutionGUID)
         if(Result != Utilities.Result_Success): raise Exception(Result) #Report the error and don't continue - can't log the error because log file is invalid
 
         #Get all file level configurations; do this only once per process execution
-        Result, LogEntries = Utilities.RetrieveConfigurations_File(CurrentFunction, LogEntries, ExecutionGUID)
+        LogEntries, Result = Utilities.RetrieveConfigurations_File(CurrentFunction, LogEntries, ExecutionGUID)
         if(Result != Utilities.Result_Success): raise Exception('Error in RetrieveConfigurations_File') #Log the error and don't continue
 
         #Get all column level configurations for the current ConfigurationFileID; do this only once per process execution
-        Result, LogEntries = Utilities.RetrieveConfigurations_Column(CurrentFunction, LogEntries, ExecutionGUID)
+        LogEntries, Result = Utilities.RetrieveConfigurations_Column(CurrentFunction, LogEntries, ExecutionGUID)
         if(Result != Utilities.Result_Success): raise Exception('Error in RetrieveConfigurations_Column') #Log the error and don't continue
 
         #Validate root level parameters
@@ -156,16 +143,13 @@ def Main(InboundSourceFolder = '', ParentExecutionGUID = ''):
         print(Utilities.BuildErrorMessage(CurrentFunction, CurrentScriptFile, e, False, Parameters)) #Report the error
 
     if(Utilities.IsValid_LogFile):
-        #Now process all Inbound files, along with all necessary validations
+        #Now process all Inbound folders, along with all necessary validations
         try:
-            #Loop through the Inbound folder & sub-folder(s) looking for files to ingest
-            if AllInboundFolders: #Process files in all Inbound sub-folders
+            if AllInboundFolders: #Process all Inbound sub-folders
                 for FolderName in os.listdir(Utilities.FullPath_Bronze_Inbound):
-                    #Loop through all files in the current Inbound sub-folder
                     InboundFolder = os.path.join(Utilities.FullPath_Bronze_Inbound, FolderName)
                     Result = ProcessInboundFolder(CurrentFunction, InboundFolder, ExecutionGUID)
-            else: #Process files in just the specified Inbound sub-folder
-                #Loop through all files in the specified Inbound sub-folder
+            else: #Process just the specified Inbound sub-folder
                 InboundFolder = os.path.join(Utilities.FullPath_Bronze_Inbound, InboundSourceFolder)
                 Result = ProcessInboundFolder(CurrentFunction, InboundFolder, ExecutionGUID)
 
@@ -182,7 +166,7 @@ def Main(InboundSourceFolder = '', ParentExecutionGUID = ''):
         finally:
             Utilities.WriteToLogFile(CurrentFunction, LogEntries, ExecutionGUID)
 
-def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
+def ProcessInboundFile(CallStack, InboundFile, ParentExecutionGUID, Source):
     #Variable(s) defined outside of this function, but set within this function
     global Bronze
     global LogEntries
@@ -194,17 +178,17 @@ def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
     CallStack = f'{CallStack} > {CurrentFunction}' #Add the current function to the call stack
     ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
     Parameters = {
-        'FileName': FileName
+        'InboundFile': InboundFile
         , 'ParentExecutionGUID': ParentExecutionGUID
         , 'Source': Source
     }
     Result = Utilities.Result_Success
     try:
+        FileName = os.path.basename(InboundFile) #Get the file name from the full path
         FileExtension = os.path.splitext(FileName)[1] #Get the file extension of the current file
+
         #Process only .csv or .txt files
         if FileName.lower().endswith(('.csv', '.txt')):
-            InboundFile = os.path.join(Utilities.FullPath_Bronze_Inbound, Source, FileName) #Generate the full path and file name of the file
-
             #Read the current file into a dataframe
             CurrentFile = pd.read_csv(InboundFile, delimiter = ExpectedDelimiter)
 
@@ -226,19 +210,14 @@ def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
 
                 #Validate the actual column header
                 Issue = ''
-                Result, Issue, LogEntries = Utilities.ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, LogEntries, ParentExecutionGUID)
+                LogEntries, Result, Issue = Utilities.ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, LogEntries, ParentExecutionGUID)
                 if(Result != Utilities.Result_Success): #There was an issue validating the column header
                     #Rename the file to indicate the issue found
                     FileName = FileName.replace(FileExtension, '') + '.InvalidColumnHeader.' + Issue + FileExtension #Change the file name to indicate that it has an invalid column header
-                    FullPath_Error_CurrentFile = os.path.join(FullPath_CurrentSource_Error, FileName) #Set the full path of the error file
-                    
+                    FullPath_Error_CurrentFile = os.path.join(FullPath_Bronze_Error_CurrentSource, FileName) #Set the full path of the error file
+                   
                     #Move the file to the appropriate Error folder                    
-                    Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_Error_CurrentFile, LogEntries, ParentExecutionGUID)
-                else: #The file passed validation
-                    #Move the file to the appropriate Silver Inbound folder
-                    FullPath_TargetFile = os.path.join(FullPath_CurrentSource_Silver_Inbound, FileName)
-                    Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_TargetFile, LogEntries, ParentExecutionGUID)
-                    if(Result != Utilities.Result_Success): raise Exception('Error in MoveFile') #Log the error and don't continue
+                    LogEntries, Result = Utilities.MoveFile(CallStack, InboundFile, FullPath_Error_CurrentFile, LogEntries, ParentExecutionGUID)
 
         #Log the step
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, File = InboundFile, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Utilities.Severity_Info)
@@ -252,16 +231,14 @@ def ProcessInboundFile(CallStack, FileName, ParentExecutionGUID, Source):
         #Return the result
         return Result
 
-def ProcessInboundFolder(CallStack, InboundFolder, ParentExecutionGUID):
+def ProcessInboundFolder(CallStack, FullPath_Bronze_Inbound_CurrentSource, ParentExecutionGUID, Source):
     #Variable(s) defined outside of this function, but set within this function
-    global Bronze
     global ConfigurationFileID
     global Configurations_Column_CurrentFile
     global Configurations_File_CurrentFile
     global ExpectedDelimiter
-    global FullPath_CurrentSource_Error
-    global FullPath_CurrentSource_Inbound
-    global FullPath_CurrentSource_Silver_Inbound
+    global FullPath_Bronze_Error_CurrentSource
+    global FullPath_Silver_Inbound_CurrentSource
     global InboundFileFound
     global LogEntries
 
@@ -273,29 +250,26 @@ def ProcessInboundFolder(CallStack, InboundFolder, ParentExecutionGUID):
     ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
     InboundFileFound = False
     Parameters = {
-        'InboundFolder': InboundFolder
+        'FullPath_Bronze_Inbound_CurrentSource': FullPath_Bronze_Inbound_CurrentSource
         , 'ParentExecutionGUID': ParentExecutionGUID
+        , 'Source': Source
     }
     Result = Utilities.Result_Success
     try:
         #Loop through all files in the current Inbound sub-folder
-        if not os.listdir(InboundFolder):
+        if not os.listdir(FullPath_Bronze_Inbound_CurrentSource):
             #There are no files in the folder
             InboundFileFound = False
             if(EmptyFolder != ''): EmptyFolder = EmptyFolder + ', '
-            EmptyFolder = EmptyFolder + InboundFolder
+            EmptyFolder = EmptyFolder + FullPath_Bronze_Inbound_CurrentSource
             Result = 'No files were found for processing in ' + EmptyFolder
         else:
             #There are files in the folder
             InboundFileFound = True
 
-            #Parse the folder path of the current file to determine the "source" folder of the current file to help filter for the correct configurations
-            Source = os.path.relpath(InboundFolder, Utilities.FullPath_Bronze_Inbound) #Get only the last folder name from the path
-
             #Set & validate the full paths of subfolders for the current source
-            Result, LogEntries, FullPath_CurrentSource_Error = Utilities.BuildFolderPath(CallStack, Utilities.FullPath_Bronze_Error, Source, LogEntries, ParentExecutionGUID)
-            Result, LogEntries, FullPath_CurrentSource_Inbound = Utilities.BuildFolderPath(CallStack, Utilities.FullPath_Bronze_Inbound, Source, LogEntries, ParentExecutionGUID)
-            Result, LogEntries, FullPath_CurrentSource_Silver_Inbound = Utilities.BuildFolderPath(CallStack, Utilities.FullPath_Silver_Inbound, Source, LogEntries, ParentExecutionGUID)
+            LogEntries, Result, FullPath_Bronze_Error_CurrentSource = Utilities.BuildFolderPath(CallStack, Utilities.FullPath_Bronze_Error, Source, LogEntries, ParentExecutionGUID)
+            LogEntries, Result, FullPath_Silver_Inbound_CurrentSource = Utilities.BuildFolderPath(CallStack, Utilities.FullPath_Silver_Inbound, Source, LogEntries, ParentExecutionGUID)
 
             #Filter file level configurations by Source
             Configurations_File_CurrentFile = Utilities.Configurations_File_All[Utilities.Configurations_File_All['Source'] == Source]
@@ -319,8 +293,15 @@ def ProcessInboundFolder(CallStack, InboundFolder, ParentExecutionGUID):
                     LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Utilities.Severity_Error)
                 else:
                     #Ingest each file in the current Inbound folder
-                    for FileName in os.listdir(InboundFolder):
-                        Result = ProcessInboundFile(CallStack, FileName, ExecutionGUID, Source)
+                    for FileName in os.listdir(Source):
+                        InboundFile = os.path.join(FullPath_Bronze_Inbound_CurrentSource, Source, FileName) #Generate the full path and file name of the file
+                        Result = ProcessInboundFile(CallStack, InboundFile, ExecutionGUID, Source)
+                        if(Result != Utilities.Result_Success): raise Exception('Error in ProcessInboundFile') #Log the error and don't continue
+
+                        #Move the file to the appropriate Silver Inbound folder
+                        FullPath_TargetFile = os.path.join(FullPath_Silver_Inbound_CurrentSource, FileName)
+                        Result, LogEntries = Utilities.MoveFile(CallStack, InboundFile, FullPath_TargetFile, LogEntries, ParentExecutionGUID)
+                        if(Result != Utilities.Result_Success): raise Exception('Error in MoveFile') #Log the error and don't continue
 
         #Log the step
         LogStep(Begin, CallStack, ExecutionGUID, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Utilities.Severity_Info)
