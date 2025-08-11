@@ -1,3 +1,6 @@
+#****************************************************************************************
+#REFERENCES
+#****************************************************************************************
 import csv
 import os
 import pandas as pd
@@ -5,7 +8,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-#Empty/static variables
+#****************************************************************************************
+#GLOBAL VARIABLES
+#   Set these variables to either empty or hard-coded values
+#   These variables can change value by any function
+#****************************************************************************************
 CallingObject = ''
 ColumnConfigurationFilename = ''
 Configurations_Column_All = pd.DataFrame()
@@ -62,7 +69,7 @@ FullPath_Gold_Inbound = ''
 FullPath_LogFile = ''
 FullPath_Root = ''
 FullPath_Silver = ''
-FullPath_Silver_Dimensions = ''
+FullPath_Silver_Dimension = ''
 FullPath_Silver_Error = ''
 FullPath_Silver_Facts = ''
 FullPath_Silver_Inbound = ''
@@ -70,7 +77,62 @@ IsValid_LogFile = False
 Result_Success = r'Success'
 Severity_Error = r'Error'
 Severity_Info = r'Info'
+Silver_Dimension_Definition_Account = [
+    'AccountGUID'
+    , 'DateTimeInserted'
+    , 'Name'
+]
+Silver_Dimension_Definition_AccountType = [
+    'AccountTypeGUID'
+    , 'DateTimeInserted'
+    , 'Name'
+]
+Silver_Dimension_Definition_Brand = [
+    'BrandGUID'
+    , 'DateTimeInserted'
+    , 'Name'
+]
+Silver_Dimension_Definition_Category = [
+    'CategoryGUID'
+    , 'DateTimeInserted'
+    , 'Name'
+    , 'ParentCategoryGUID'
+]
+Silver_Dimension_Definition_PriceType = [
+    'DateTimeInserted'
+    , 'Name'
+    , 'PriceTypeGUID'
+]
+Silver_Dimension_Definition_ProductService = [
+    'DateTimeInserted'
+    , 'Name'
+    , 'ProductServiceGUID'
+]
+Silver_Dimension_Definition_Seller = [
+    'DateTimeInserted'
+    , 'Name'
+    , 'SellerGUID'
+]
+Silver_Dimension_Definition_UnitOfMeasurement = [
+    'Abbreviation'
+    , 'DateTimeInserted'
+    , 'Name'
+    , 'UnitOfMeasurementGUID'
+]
+Silver_Dimensions = [
+    'Account'
+    , 'AccountType'
+    , 'Brand'
+    , 'Category'
+    , 'PriceType'
+    , 'ProductService'
+    , 'Seller'
+    , 'UnitOfMeasurement'
+]
 
+#****************************************************************************************
+#FUNCTIONS
+#****************************************************************************************
 def BuildErrorMessage(CurrentFunction, CurrentScriptFile, e, LogError, Parameters = ''):
     ErrorMessage = f'Error in {CurrentScriptFile} > {CurrentFunction}() on line {str(e.__traceback__.tb_lineno)}: {str(e)}'
     if not LogError: ErrorMessage = f'Error in {CurrentScriptFile} > {CurrentFunction}() on line {str(e.__traceback__.tb_lineno)}\r\nError: {str(e)}\r\nParameters: {Parameters}'
@@ -103,7 +165,7 @@ def BuildFolderPath(CallStack, Folder, SubFolder, LogEntries, ParentExecutionGUI
 
     finally:
         #Return the result
-        return Result, LogEntries, FullPath
+        return LogEntries, Result, FullPath
 
 def LogStep(Begin, Caller, CallStack, ExecutionGUID, LogEntries, Parameters, **VariedParameters): #The explicit parameters are required; anything passed into **VariedParameters is optional; different parameters may be passed into **VariedParameters
     #Don't log this function
@@ -181,7 +243,7 @@ def MoveFile(CallStack, FullPath_SourceFile, FullPath_TargetFile, LogEntries, Pa
 
     finally:
         #Return the result
-        return Result, LogEntries
+        return LogEntries, Result
 
 def RetrieveOrCreateFile(CallStack, FileDefinition, FullPath, LogEntries, ParentExecutionGUID):
     Begin = datetime.now()
@@ -212,7 +274,7 @@ def RetrieveOrCreateFile(CallStack, FileDefinition, FullPath, LogEntries, Parent
         else:
             #Validate the actual column headers
             ActualColumnsAsList = File.columns.tolist()
-            Result, Issue, LogEntries = ValidateColumnHeader(ActualColumnsAsList, CallStack, FileDefinition, LogEntries, ParentExecutionGUID)
+            LogEntries, Result, Issue = ValidateColumnHeader(ActualColumnsAsList, CallStack, FileDefinition, LogEntries, ParentExecutionGUID)
             if(Result != Result_Success): raise Exception('Error in ValidateColumnHeader') #Log the error and don't continue
 
         #Log the step
@@ -225,7 +287,7 @@ def RetrieveOrCreateFile(CallStack, FileDefinition, FullPath, LogEntries, Parent
 
     finally:
         #Return the result
-        return Result, File, LogEntries
+        return LogEntries, Result, File
 
 def RetrieveConfigurations_Column(CallStack, LogEntries, ParentExecutionGUID):
     #Variable(s) defined outside of this function, but set within this function
@@ -242,7 +304,7 @@ def RetrieveConfigurations_Column(CallStack, LogEntries, ParentExecutionGUID):
     Result = Result_Success
     try:
         ConfigurationFile = pd.DataFrame() #Initialize to an empty DataFrame
-        Result, ConfigurationFile, LogEntries = RetrieveOrCreateFile(CallStack, FileDefinition_Configuration_Column, FullPath_Configurations_Column, LogEntries, ParentExecutionGUID)
+        LogEntries, Result, ConfigurationFile = RetrieveOrCreateFile(CallStack, FileDefinition_Configuration_Column, FullPath_Configurations_Column, LogEntries, ParentExecutionGUID)
         if(Result == Result_Success): Configurations_Column_All = ConfigurationFile
 
         #Log the step
@@ -255,7 +317,7 @@ def RetrieveConfigurations_Column(CallStack, LogEntries, ParentExecutionGUID):
 
     finally:
         #Return the result
-        return Result, LogEntries
+        return LogEntries, Result
 
 def RetrieveConfigurations_File(CallStack, LogEntries, ParentExecutionGUID):
     #Variable(s) defined outside of this function, but set within this function
@@ -273,7 +335,7 @@ def RetrieveConfigurations_File(CallStack, LogEntries, ParentExecutionGUID):
     Result = Result_Success
     try:
         ConfigurationFile = pd.DataFrame() #Initialize to an empty DataFrame
-        Result, ConfigurationFile, LogEntries = RetrieveOrCreateFile(CallStack, FileDefinition_Configuration_File, FullPath_Configurations_File, LogEntries, ParentExecutionGUID)
+        LogEntries, Result, ConfigurationFile = RetrieveOrCreateFile(CallStack, FileDefinition_Configuration_File, FullPath_Configurations_File, LogEntries, ParentExecutionGUID)
         if(Result == Result_Success): Configurations_File_All = ConfigurationFile
 
         #Log the step
@@ -286,7 +348,7 @@ def RetrieveConfigurations_File(CallStack, LogEntries, ParentExecutionGUID):
 
     finally:
         #Return the result
-        return Result, LogEntries
+        return LogEntries, Result
 
 def SetGlobalVariables(Caller, CallStack, LogEntries, ParentExecutionGUID):
     #Set the global variables
@@ -308,7 +370,7 @@ def SetGlobalVariables(Caller, CallStack, LogEntries, ParentExecutionGUID):
     global FullPath_LogFile
     global FullPath_Root
     global FullPath_Silver
-    global FullPath_Silver_Dimensions
+    global FullPath_Silver_Dimension
     global FullPath_Silver_Error
     global FullPath_Silver_Facts
     global FullPath_Silver_Inbound
@@ -326,22 +388,22 @@ def SetGlobalVariables(Caller, CallStack, LogEntries, ParentExecutionGUID):
         DelimiterDefault = r'|'
 
         #Set & validate folder paths
-        Result, LogEntries, FullPath_Root =              BuildFolderPath(CallStack, str(Path(__file__).parent.parent), '', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Admin =             BuildFolderPath(CallStack, FullPath_Root, 'Admin', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Bronze =            BuildFolderPath(CallStack, FullPath_Root, 'Bronze', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Bronze_Archive =    BuildFolderPath(CallStack, FullPath_Bronze, 'Archive', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Bronze_Error =      BuildFolderPath(CallStack, FullPath_Bronze, 'Error', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Bronze_Inbound =    BuildFolderPath(CallStack, FullPath_Bronze, 'Inbound', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Gold =              BuildFolderPath(CallStack, FullPath_Root, 'Gold', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Gold_Dimensions =   BuildFolderPath(CallStack, FullPath_Gold, 'Dimensions', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Gold_Error =        BuildFolderPath(CallStack, FullPath_Gold, 'Error', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Gold_Facts =        BuildFolderPath(CallStack, FullPath_Gold, 'Facts', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Gold_Inbound =      BuildFolderPath(CallStack, FullPath_Gold, 'Inbound', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Silver =            BuildFolderPath(CallStack, FullPath_Root, 'Silver', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Silver_Dimensions = BuildFolderPath(CallStack, FullPath_Silver, 'Dimensions', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Silver_Error =      BuildFolderPath(CallStack, FullPath_Silver, 'Error', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Silver_Facts =      BuildFolderPath(CallStack, FullPath_Silver, 'Facts', LogEntries, ParentExecutionGUID)
-        Result, LogEntries, FullPath_Silver_Inbound =    BuildFolderPath(CallStack, FullPath_Silver, 'Inbound', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Root =             BuildFolderPath(CallStack, str(Path(__file__).parent.parent), '', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Admin =            BuildFolderPath(CallStack, FullPath_Root, 'Admin', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Bronze =           BuildFolderPath(CallStack, FullPath_Root, 'Bronze', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Bronze_Archive =   BuildFolderPath(CallStack, FullPath_Bronze, 'Archive', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Bronze_Error =     BuildFolderPath(CallStack, FullPath_Bronze, 'Error', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Bronze_Inbound =   BuildFolderPath(CallStack, FullPath_Bronze, 'Inbound', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Gold =             BuildFolderPath(CallStack, FullPath_Root, 'Gold', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Gold_Dimensions =  BuildFolderPath(CallStack, FullPath_Gold, 'Dimensions', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Gold_Error =       BuildFolderPath(CallStack, FullPath_Gold, 'Error', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Gold_Facts =       BuildFolderPath(CallStack, FullPath_Gold, 'Facts', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Gold_Inbound =     BuildFolderPath(CallStack, FullPath_Gold, 'Inbound', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Silver =           BuildFolderPath(CallStack, FullPath_Root, 'Silver', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Silver_Dimension = BuildFolderPath(CallStack, FullPath_Silver, 'Dimension', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Silver_Error =     BuildFolderPath(CallStack, FullPath_Silver, 'Error', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Silver_Facts =     BuildFolderPath(CallStack, FullPath_Silver, 'Facts', LogEntries, ParentExecutionGUID)
+        LogEntries, Result, FullPath_Silver_Inbound =   BuildFolderPath(CallStack, FullPath_Silver, 'Inbound', LogEntries, ParentExecutionGUID)
 
         FullPath_Configurations_Column = os.path.join(FullPath_Admin, 'ConfigurationColumn.txt')
         FullPath_Configurations_File = os.path.join(FullPath_Admin, 'ConfigurationFile.txt')
@@ -357,7 +419,7 @@ def SetGlobalVariables(Caller, CallStack, LogEntries, ParentExecutionGUID):
 
     finally:
         #Return the result
-        return Result, LogEntries
+        return LogEntries, Result
 
 def ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, LogEntries, ParentExecutionGUID):
     Begin = datetime.now()
@@ -400,7 +462,7 @@ def ValidateColumnHeader(ActualColumnsAsList, CallStack, ExpectedColumnsAsList, 
 
     finally:
         #Return the result
-        return Result, Issue, LogEntries
+        return LogEntries, Result, Issue
 
 def ValidateLogFile(CallStack, LogEntries, ParentExecutionGUID):
     #Variable(s) defined outside of this function, but set within this function
@@ -418,7 +480,7 @@ def ValidateLogFile(CallStack, LogEntries, ParentExecutionGUID):
     try:
         IsValid_LogFile = False
         LogFile = pd.DataFrame() #Initialize to an empty DataFrame
-        Result, LogFile, LogEntries = RetrieveOrCreateFile(CallStack, FileDefinition_Log, FullPath_LogFile, LogEntries, ParentExecutionGUID)
+        LogEntries, Result, LogFile = RetrieveOrCreateFile(CallStack, FileDefinition_Log, FullPath_LogFile, LogEntries, ParentExecutionGUID)
         if(Result == Result_Success): IsValid_LogFile = True
 
         #Log the step
@@ -431,7 +493,37 @@ def ValidateLogFile(CallStack, LogEntries, ParentExecutionGUID):
 
     finally:
         #Return the result
-        return Result, LogEntries
+        return LogEntries, Result
+
+def ValidateSilverDimension(CallStack, Dimension, LogEntries, ParentExecutionGUID):
+    #Variable(s) defined outside of this function, but set within this function
+
+    Begin = datetime.now()
+    CurrentFunction = 'ValidateSilverDimension'
+    CallStack = f'{CallStack} > {CurrentFunction}' #Add the current function to the call stack
+    ExecutionGUID = str(uuid.uuid4()) #Generate a new GUID for logging the function
+    Parameters = {
+        'Dimension': Dimension
+        , 'ParentExecutionGUID': ParentExecutionGUID
+    }
+    Result = Result_Success
+    try:
+
+        #Build the full path to the Silver Dimension file
+        FullPath_Silver_Dimension = os.path.join(FullPath_Silver_Dimension, Dimension, '.txt')
+
+        #Validate the column headers
+        SilverDimension = pd.DataFrame() #Initialize to an empty DataFrame
+        LogEntries, Result, SilverDimension = RetrieveOrCreateFile(CallStack, FileDefinition_Log, FullPath_LogFile, LogEntries, ParentExecutionGUID)
+
+    except Exception as e:
+        Result = BuildErrorMessage(CurrentFunction, CurrentScriptFile, e, True) #Build the error message
+        LogStep(Begin, CallingObject, CallStack, ExecutionGUID, LogEntries, Parameters, ParentExecutionGUID = ParentExecutionGUID, Result = Result, Severity = Severity_Error) #Log the error
+        print(Result) #Report the error
+
+    finally:
+        #Return the result
+        return LogEntries, Result, FullPath_Silver_Dimension, SilverDimension
 
 def WriteToLogFile(CallStack, LogEntries, ParentExecutionGUID):
     #Variable(s) defined outside of this function, but set within this function
