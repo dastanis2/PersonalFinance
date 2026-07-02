@@ -1,14 +1,14 @@
-# Medallion Data Pipeline
-
-A configuration-driven ETL pipeline written in Python that moves data through a **Bronze → Silver → Gold** (medallion) architecture, with schema validation, transformation, and dimensional modeling handled largely through CSV-based configuration rather than hard-coded logic.
-
-> **Status: Work in progress.** This project is under active development. Core scaffolding (folder structure, configuration retrieval, logging) is in place, but several transformation and modeling functions are incomplete or being actively reworked. See [Project Status](#project-status) below for details.
-
-## Overview
+# Overview
 
 The goal of this project is to bring together spending data from a variety of sources — banks, retailers, and other accounts — into a single, consistent Gold-layer dataset that can be pulled into Power BI for reporting. The intent is to be able to answer questions like *how much am I spending, on what, when, and broken out by category* across all of my accounts in one place, rather than having to look at each source individually.
 
 To get there, the pipeline ingests raw source files (e.g., a bank's transaction export, a retailer's order history), validates and stages them, cleanses and models them into a dimensional (star) schema, and ultimately produces analytics-ready Gold-layer tables suitable for direct consumption by Power BI. Each stage is driven by configuration files rather than per-source code, so that adding a new data source — a new bank or retailer — is (in principle) a matter of adding configuration rows rather than writing new ingestion logic.
+
+## Medallion Data Pipeline
+
+A configuration-driven ETL pipeline written in Python that moves data through a **Bronze → Silver → Gold** (medallion) architecture, with schema validation, transformation, and dimensional modeling handled largely through CSV-based configuration rather than hard-coded logic.
+
+> **Status: Work in progress.** This project is under active development. Core scaffolding (folder structure, configuration retrieval, logging) is in place, but several transformation and modeling functions are incomplete or being actively reworked. See [Project Status](#project-status) below for details.
 
 ### The three layers
 
@@ -55,20 +55,20 @@ At runtime, the scripts also expect (and will create, if missing) a data folder 
     └── Error/
 ```
 
-## How It Works
+# How It Works
 
-### 1. `LoadFileToBronze.py`
+## 1. `LoadFileToBronze.py`
 Scans the `Bronze/Inbound/<Source>/` folders (or a single specified source folder), validates each file's column header against the configuration for that source, and either:
 - Moves valid files to `Silver/Inbound/<Source>/`, or
 - Renames and moves invalid files to `Bronze/Error/<Source>/` with the validation issue embedded in the filename.
 
-### 2. `LoadBronzeToSilver.py`
+## 2. `LoadBronzeToSilver.py`
 For each configured source, reads staged files, applies cleansing (type coercion, expression-based derived columns) via `Utilities.CleanseData`, and models the result into Silver dimension and fact tables. Also ensures the Date dimension is populated for the past several years before any other processing runs, so downstream date lookups always have a target.
 
-### 3. `LoadSilverToGold.py`
+## 3. `LoadSilverToGold.py`
 Populates Gold-layer dimensions from Silver data. Currently implements Date dimension population; additional dimension and fact loading (ultimately producing the spend-by-category-and-time facts that Power BI reports will be built on) is planned (see [Project Status](#project-status)).
 
-### `Utilities.py`
+## `Utilities.py`
 Shared functionality used by all three entry-point scripts, including:
 - **Logging** — every function call is logged with a unique `ExecutionGUID`, a `ParentExecutionGUID` linking it to its caller, and a full call stack, enabling end-to-end tracing of a single pipeline run through `Log.txt`.
 - **Configuration retrieval** — loads and validates `Configuration.File.csv` and `Configuration.Column.csv` once per run, creating them from a built-in definition if they don't yet exist.
